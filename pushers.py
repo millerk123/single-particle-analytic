@@ -8,30 +8,24 @@ phi0 = np.pi/2
 def main():
 
     global dudt
-    # global fields
-
-    # fields = np.array([4.975083222301552,
-    #             4.9418064931030266,
-    #             4.875036036825734,
-    #             4.799281318880748,
-    #             4.721516481044602,
-    #             4.644799174850031,
-    #             4.569221480260965,
-    #             4.495661010850144,
-    #             4.423233996973474,
-    #             4.352744549621862,
-    #             4.282872741078667])
 
     n_p = 1
     x = np.zeros(n_p)
     p = np.zeros((3,n_p))
 
-    # Set up initial conditions
+    #----Set up initial conditions----
+    # Multiple particles
     # x[:] = np.linspace(-0.1,0.1,n_p)
-    # print(x)
+    # p[0,:] = 0
+
+    # Single particle
     x[0] = 0.0
-    for i in np.arange(n_p):
-        p[:,i] = [0.0,a0*dt/2,0.0]
+    p[0,:] = 30.0
+
+    # Analytic correction to initial momentum from Boris pusher
+    p[1,:] = a0*dt/2 - np.sqrt( ( np.sqrt( np.square( a0*dt*p[0,:] )
+                                  + np.square( 1 + np.square( p[0,:] ) ) )
+                                  - 1 - np.square(p[0,:]) ) / 2 )
 
     t_final = 300.0
     n_steps = np.ceil(t_final/dt).astype(int)
@@ -60,7 +54,6 @@ def e( x, n ):
     ef = np.zeros( (3,x.size) )
 
     ef[1,:] = a0 * omega0 * np.sin( omega0*( x - n*dt ) + phi0 )
-    # ef[1,:] = fields[n]
 
     return ef
 
@@ -69,13 +62,10 @@ def b( x, n ):
     bf = np.zeros( (3,x.size) )
 
     bf[2,:] = a0 * omega0 * np.sin( omega0*( x - n*dt ) + phi0 )
-    # bf[2,:] = fields[n]
 
     return bf
 
 def dudt_boris( p, ep, bp, n ):
-
-    # print("fields ",np.array([ep[1], bp[2]]).flatten())
 
     tem = 0.5 * dt / rqm
 
@@ -101,15 +91,10 @@ def dudt_boris( p, ep, bp, n ):
 def adv_dep( x, p, n ):
 
     p = dudt( p, e(x[0,:],n), b(x[0,:],n), n )
-    # p = dudt( p, np.array([0,fields[n],0]), fields[n], n )
 
     rgamma = 1.0 / np.sqrt( 1.0 + np.sum( np.square(p), axis=0 ) )
 
     x = x + p[0:2,:] * rgamma * dt
-
-    # print("second ",np.concatenate([x,p]).flatten())
-    # if n==9:
-    #     stop
 
     return x, p
 
