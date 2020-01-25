@@ -1,7 +1,8 @@
 import numpy as np
+import sys
 dt = 0.14
 rqm = -1.0
-a0 = 5.0
+a0 = 50.0
 omega0 = 1.0
 phi0 = np.pi/2
 # Available pushers: boris, vay, cary, fullrot, euler
@@ -10,18 +11,29 @@ def main():
 
     global dudt
 
-    n_p = 1
+    pushers = {
+        "boris" : dudt_boris,
+        "vay" : dudt_vay,
+        "cary" : dudt_cary,
+        "fullrot" : dudt_fullrot,
+        "euler" : dudt_euler,
+        }
+
+    args = sys.argv
+    dudt = pushers[args[1]]
+
+    n_p = 51
     x = np.zeros(n_p)
     p = np.zeros((3,n_p))
 
     #----Set up initial conditions----
     # Multiple particles
-    # x[:] = np.linspace(-0.1,0.1,n_p)
-    # p[0,:] = 0
+    x[:] = np.linspace(-np.pi,np.pi,n_p)
+    p[0,:] = 20
 
     # Single particle
-    x[0] = 0.0
-    p[0,:] = 30.0
+    # x[0] = 0.0
+    # p[0,:] = 30.0
 
     # Analytic correction to initial momentum from Boris pusher
     p[1,:] = a0*dt/2 - np.sqrt( ( np.sqrt( np.square( a0*dt*p[0,:] )
@@ -37,7 +49,6 @@ def main():
 
     diag_x[0,:,0] = x
     diag_p[:,:,0] = p
-    dudt = dudt_euler
 
     for n in np.arange(n_steps):
 
@@ -67,12 +78,12 @@ def b( x, n ):
 
     return bf
 
-def dudt_boris( p, ep, bp, n ):
+def dudt_boris( p_in, ep, bp, n ):
 
     tem = 0.5 * dt / rqm
 
     ep = ep * tem
-    utemp = p + ep
+    utemp = p_in + ep
 
     gam_tem = tem / np.sqrt( 1.0 + np.sum( np.square(utemp), axis=0 ) )
 
@@ -88,18 +99,18 @@ def dudt_boris( p, ep, bp, n ):
 
     return p
 
-def dudt_vay( p, ep, bp, n ):
+def dudt_vay( p_in, ep, bp, n ):
 
     tem = 0.5 * dt / rqm
 
     ep = ep * tem
     bp = bp * tem
-    rgamma = 1.0 / np.sqrt( 1.0 + np.sum( np.square(p), axis=0 ) )
+    rgamma = 1.0 / np.sqrt( 1.0 + np.sum( np.square(p_in), axis=0 ) )
 
-    temp_vec = p * rgamma
+    temp_vec = p_in * rgamma
     bpsq = np.sum( np.square(bp), axis=0 )
 
-    utemp = p + ep + np.cross(temp_vec,bp,axis=0)
+    utemp = p_in + ep + np.cross(temp_vec,bp,axis=0)
 
     temp_vec = utemp + ep
 
@@ -118,13 +129,13 @@ def dudt_vay( p, ep, bp, n ):
 
     return p
 
-def dudt_cary( p, ep, bp, n ):
+def dudt_cary( p_in, ep, bp, n ):
 
     tem = 0.5 * dt / rqm
 
     ep = ep * tem
     bp = bp * tem
-    utemp = p + ep
+    utemp = p_in + ep
 
     gam_minus_sq = 1.0 + np.sum( np.square(utemp), axis=0 )
     bpsq = np.sum( np.square(bp), axis=0 )
@@ -144,12 +155,12 @@ def dudt_cary( p, ep, bp, n ):
 
     return p
 
-def dudt_fullrot( p, ep, bp, n ):
+def dudt_fullrot( p_in, ep, bp, n ):
 
     tem = 0.5 * dt / rqm
 
     ep = ep * tem
-    utemp = p + ep
+    utemp = p_in + ep
 
     tem_gam = tem / np.sqrt( 1.0 + np.sum( np.square(utemp), axis=0 ) )
 
@@ -171,12 +182,12 @@ def dudt_fullrot( p, ep, bp, n ):
 
     return p
 
-def dudt_euler( p, ep, bp, n ):
+def dudt_euler( p_in, ep, bp, n ):
 
     tem = 0.5 * dt / rqm
 
     ep = ep * tem
-    utemp = p + ep
+    utemp = p_in + ep
 
     gam_tem = dt / ( rqm * np.sqrt( 1.0 + np.sum( np.square(utemp), axis=0 ) ) )
 
@@ -198,6 +209,8 @@ def dudt_euler( p, ep, bp, n ):
     r12 = 2*(b*c+a*d);      r22=a*a+c*c-b*b-d*d;  r32=2*(c*d-a*b)
     r13 = 2*(b*d-a*c);      r23=2*(c*d+a*b);      r33=a*a+d*d-b*b-c*c
 
+    p = np.zeros_like(p_in)
+
     p[0,:] = r11 * utemp[0,:] + r21 * utemp[1,:] + r31 * utemp[2,:]
     p[1,:] = r12 * utemp[0,:] + r22 * utemp[1,:] + r32 * utemp[2,:]
     p[2,:] = r13 * utemp[0,:] + r23 * utemp[1,:] + r33 * utemp[2,:]
@@ -206,9 +219,9 @@ def dudt_euler( p, ep, bp, n ):
 
     return p
 
-def adv_dep( x, p, n ):
+def adv_dep( x, p_in, n ):
 
-    p = dudt( p, e(x[0,:],n), b(x[0,:],n), n )
+    p = dudt( p_in, e(x[0,:],n), b(x[0,:],n), n )
 
     rgamma = 1.0 / np.sqrt( 1.0 + np.sum( np.square(p), axis=0 ) )
 
