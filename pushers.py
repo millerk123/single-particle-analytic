@@ -5,11 +5,13 @@ rqm = -1.0
 a0 = 50.0
 omega0 = 1.0
 phi0 = np.pi/2
+p10 = 0.0
+t_final = 300.0
 # Available pushers: boris, vay, cary, fullrot, euler
 
 def main():
 
-    global dudt
+    global dudt, a0, p10
 
     pushers = {
         "boris" : dudt_boris,
@@ -22,6 +24,13 @@ def main():
     args = sys.argv
     dudt = pushers[args[1]]
 
+    if len(args)>2:
+        if len(args)!=4:
+            print("Must have both a0 and p10 as inputs, no more")
+            return
+        a0 = float(args[2])
+        p10 = float(args[3])
+
     n_p = 51
     x = np.zeros(n_p)
     p = np.zeros((3,n_p))
@@ -29,18 +38,17 @@ def main():
     #----Set up initial conditions----
     # Multiple particles
     x[:] = np.linspace(-np.pi,np.pi,n_p)
-    p[0,:] = 20
+    p[0,:] = p10
 
     # Single particle
     # x[0] = 0.0
-    # p[0,:] = 30.0
+    # p[0,:] = p10
 
     # Analytic correction to initial momentum from Boris pusher
-    p[1,:] = a0*dt/2 - np.sqrt( ( np.sqrt( np.square( a0*dt*p[0,:] )
-                                  + np.square( 1 + np.square(p[0,:]) ) )
-                                  - 1 - np.square(p[0,:]) ) / 2 )
+    p[1,:] = a0*dt/2 - np.sqrt( ( np.sqrt( np.square( a0*dt*p10 )
+                                  + np.square( 1 + np.square(p10) ) )
+                                  - 1 - np.square(p10) ) / 2 )
 
-    t_final = 300.0
     n_steps = np.ceil(t_final/dt).astype(int)
 
     # Set up diagnostic arrays
@@ -54,15 +62,17 @@ def main():
 
         diag_x[:,:,n+1], diag_p[:,:,n+1] = adv_dep( diag_x[:,:,n], diag_p[:,:,n], n )
     
-    diag_gamma = np.sqrt( np.sum( np.square(diag_p), axis=0) )
+    diag_gamma = np.sqrt( 1 + np.sum( np.square(diag_p), axis=0) )
 
     np.savez( 'single-part-'+dudt.__name__[5:], x=diag_x, p=diag_p, gamma=diag_gamma,
-                dt=dt, n_steps=n_steps )
+                dt=dt, n_steps=n_steps, a0=a0, phi0=phi0, p10=p10 )
 
 # Assumes all arrays are of shape [dim,part]
 # Except x, which is shape [part] since we don't need to keep track of other 2 dimensions
 
 def e( x, n ):
+
+    global a0
 
     ef = np.zeros( (3,x.size) )
 
@@ -71,6 +81,8 @@ def e( x, n ):
     return ef
 
 def b( x, n ):
+
+    global a0
 
     bf = np.zeros( (3,x.size) )
 
