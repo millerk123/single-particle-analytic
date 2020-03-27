@@ -1,5 +1,6 @@
 import numpy as np
 import sys
+from scipy import optimize
 dt = 0.14
 rqm = -1.0
 a0 = 50.0
@@ -19,6 +20,7 @@ def main():
         "cary" : dudt_cary,
         "fullrot" : dudt_fullrot,
         "euler" : dudt_euler,
+        "petri" : dudt_petri,
         }
 
     args = sys.argv
@@ -35,19 +37,16 @@ def main():
     x = np.zeros(n_p)
     p = np.zeros((3,n_p))
 
-    #----Set up initial conditions----
-    # Multiple particles
+    #----Set up initial conditions for multiple particles----
     x[:] = np.linspace(-np.pi,np.pi,n_p)
-    p[0,:] = p10
 
-    # Single particle
-    # x[0] = 0.0
-    # p[0,:] = p10
-
-    # Analytic correction to initial momentum from Boris pusher
-    p[1,:] = a0*dt/2 - np.sqrt( ( np.sqrt( np.square( a0*dt*p10 )
-                                  + np.square( 1 + np.square(p10) ) )
-                                  - 1 - np.square(p10) ) / 2 )
+    # Get proper initial conditions for the momentum (half time step back)
+    # With this momentum, the true initial velocity in x1/x2 will average to 0
+    for i in np.arange(n_p):
+        ux0=0.0; uy0=0.0; uz0=p10; t0=phi0; z0=x[i];
+        [p10_half,p20_half] = haines_initial(a0,ux0,uy0,uz0,t0,dt,z0)
+        p[0,i] = p10_half
+        p[1,i] = p20_half
 
     n_steps = np.ceil(t_final/dt).astype(int)
 
@@ -69,6 +68,47 @@ def main():
 
 # Assumes all arrays are of shape [dim,part]
 # Except x, which is shape [part] since we don't need to keep track of other 2 dimensions
+
+def haines_initial(a0,ux0,uy0,uz0,t0,dt,z0):
+    g0 = np.sqrt( 1. + np.square(ux0) + np.square(uy0) + np.square(uz0) )
+    bx0=ux0/g0; by0=uy0/g0; bz0=uz0/g0;
+    phi0 = t0 - z0
+
+    # Solve for the value of s for half time step back
+    def t_haines(s):
+        return (1./(2*g0*(1-bz0))*( 0.5*np.square(a0)*s + np.square(a0)/(4*g0*(1-bz0))*
+                        ( np.sin(2*g0*(1-bz0)*s+2*phi0) - np.sin(2*phi0) ) + 
+                        2*a0*(g0*bx0 - a0*np.cos(phi0))/(g0*(1-bz0))*( np.sin(g0*(1-bz0)*s+phi0) - np.sin(phi0) ) +
+                        np.square(g0*bx0 - a0*np.cos(phi0))*s + s + np.square(g0*by0)*s ) - 0.5*g0*(1-bz0)*s + 
+                        g0*(1-bz0)*s - (-dt/2) )
+
+    # Calculate the initial s value that corresponds to -dt/2
+    # There can be error in this, so we calculate it in a while loop to make sure it's right
+    t = 0.0
+    count = 0
+    max_iter = 10
+    while not np.isclose(t,-dt/2,rtol=1e-4,atol=1e-4) and count < max_iter:
+        # Start second guess at 0, then decrease from there for large a0 values
+        s = optimize.root_scalar(t_haines,x0=-dt/2,x1=-dt/2*count/100).root
+
+        x = a0/(g0*(1-bz0)) * ( np.sin( g0*(1-bz0)*s + phi0 ) - np.sin(phi0) ) - a0*s*np.cos(phi0) + g0*bx0*s
+        z = 1./(2*g0*(1-bz0))*( 0.5*np.square(a0)*s + np.square(a0)/(4*g0*(1-bz0))*
+                            ( np.sin(2*g0*(1-bz0)*s+2*phi0) - np.sin(2*phi0) ) + 
+                            2*a0*(g0*bx0 - a0*np.cos(phi0))/(g0*(1-bz0))*( np.sin(g0*(1-bz0)*s+phi0) - np.sin(phi0) ) +
+                            np.square(g0*bx0 - a0*np.cos(phi0))*s + s + np.square(g0*by0)*s ) - 0.5*g0*(1-bz0)*s
+        t = z + g0*(1-bz0)*s
+        count += 1
+        
+    if count == max_iter:
+        print("Could not calculate the correct t_initial.  Aborting...")
+        print("Desired t_initial = ",-dt/2,", calculated t_initial = ",t)
+        return
+
+    # Get initial momentum a half time step back
+    px = a0*( np.cos(g0*(1-bz0)*s + phi0) - np.cos(phi0) ) + g0*bx0
+    pz = 1./(2*g0*(1-bz0))*( np.square( -a0*(np.cos(g0*(1-bz0)*s + phi0) - np.cos(phi0)) - g0*bx0 ) + 
+                            1 + np.square(g0*by0) ) - 0.5*g0*(1-bz0)
+    return [pz,px]
 
 def e( x, n ):
 
@@ -110,6 +150,125 @@ def dudt_boris( p_in, ep, bp, n ):
     p = utemp + ep
 
     return p
+
+def dudt_petri( p_in, ep, bp, n ):
+
+    def lorentz_rotate2( sign ):
+
+        # Initialize variables
+        ndir2_rot = np.empty_like(ep)
+        u_tmp = np.empty_like(ep)
+        u_out = np.empty_like(u4)
+
+        ndir1 = bp / b_amp
+        ndir2 = ep / e_amp
+
+        c_theta = ndir1[0,:]
+        s_theta = np.sqrt( np.sum( np.square(ndir1[1:,:]), axis=0 ) )
+        s_theta[inds] = 1 # Avoid dividing by 0
+
+        # We always have c_phi = 0
+        s_phi = ndir1[2,:] / s_theta
+        s_theta[inds] = 0
+
+        ndir2_rot[0,:] =  c_theta * ndir2[0,:] + s_theta * s_phi * ndir2[2,:]
+        ndir2_rot[1,:] = -s_theta * ndir2[0,:] + c_theta * s_phi * ndir2[2,:]
+        ndir2_rot[2,:] = -s_phi * ndir2[1,:]
+
+        if (sign==1):
+
+            # Forward transform
+            c = ndir2_rot[1,:]
+            s = ndir2_rot[2,:]
+
+            u_tmp[0,:] =  u4[1,:]
+            u_tmp[1,:] =  s * u4[2,:] + c * u4[3,:]
+            u_tmp[2,:] = -c * u4[2,:] + s * u4[3,:]
+
+            u_out[0,:] = u4[0,:]
+            u_out[1,:] = c_theta * u_tmp[0,:] - s_theta * u_tmp[1,:]
+            u_out[2,:] = -s_phi * u_tmp[2,:]
+            u_out[3,:] = s_theta * s_phi * u_tmp[0,:] + c_theta * s_phi * u_tmp[1,:]
+
+        else:
+
+            # Backward transform
+            u_tmp[0,:] =  c_theta * u4[1,:] + s_theta * s_phi * u4[3,:]
+            u_tmp[1,:] = -s_theta * u4[1,:] + c_theta * s_phi * u4[3,:]
+            u_tmp[2,:] = -s_phi * u4[2,:]
+
+            c = ndir2_rot[1,:]
+            s = ndir2_rot[2,:]
+
+            u_out[0,:] = u4[0,:]
+            u_out[1,:] = u_tmp[0,:]
+            u_out[2,:] = s * u_tmp[1,:] - c * u_tmp[2,:]
+            u_out[3,:] = c * u_tmp[1,:] + s * u_tmp[2,:]
+
+        return u_out
+
+    def proper_dt_light():
+
+        dtau0 = dt / u4_tmp[0,:]
+        n = 0
+        nmax = 100
+
+        while (n<nmax):
+
+            t0 = dtau0
+            t1 = t0 * wb * dtau0 / 2.0
+            t2 = t1 * wb * dtau0 / 3.0
+            f = u4_tmp[0,:]*t0 + u4_tmp[3,:]*t1 + (u4_tmp[0,:]-u4_tmp[2,:])*t2 - dt
+
+            t1 = t1 * 2.0 / dtau0
+            t2 = t2 * 3.0 / dtau0
+            df = u4_tmp[0,:] + u4_tmp[3,:]*t1 + (u4_tmp[0,:]-u4_tmp[2,:])*t2
+
+            dtau1 = dtau0 - f / df
+            n = n + 1
+
+            if ( np.all( np.abs(dtau1 - dtau0) / dtau0 < 1e-12 ) ):
+                break
+            else:
+                dtau0 = dtau1
+
+        return dtau1
+
+    e_amp = np.sqrt( np.sum( np.square(ep), axis=0 ) )
+    b_amp = np.sqrt( np.sum( np.square(bp), axis=0 ) )
+    inds = e_amp==0
+    e_amp[inds] = 1; b_amp[inds] = 1 # Just to avoid dividing by zero
+
+    # 4-vector of momentum
+    u4 = np.zeros((4,p_in.shape[1]))
+    u4[1:,:] = p_in
+    u4[0,:] = np.sqrt( 1.0 + np.sum( np.square(p_in), axis=0 ) )
+
+    # Always assume light-like fields
+    # Rotate the coordinate system so that B is along x1, and E is along x3
+    u4_tmp = lorentz_rotate2( sign=-1 )
+
+    wb = b_amp / rqm
+    wb[inds] = 0
+
+    # Calculate the proper time step
+    dtau = proper_dt_light()
+
+    # Advance 4-vector of momentum
+    s = wb * dtau
+    c = np.square(s) / 2
+    u4[0,:] = u4_tmp[0,:] + (u4_tmp[0,:] - u4_tmp[2,:]) * c + u4_tmp[3,:] * s
+    u4[1,:] = u4_tmp[1,:]
+    u4[2,:] = u4_tmp[2,:] + (u4_tmp[0,:] - u4_tmp[2,:]) * c + u4_tmp[3,:] * s
+    u4[3,:] = u4_tmp[3,:] + (u4_tmp[0,:] - u4_tmp[2,:]) * s
+
+    # Rotate the coordinate system back to the simulation frame
+    u4_tmp = lorentz_rotate2( sign=1 )
+
+    # If E = B = 0, then we just return the original momentum
+    u4_tmp[1:,inds] = p_in[:,inds]
+
+    return u4_tmp[1:,:]
 
 def dudt_vay( p_in, ep, bp, n ):
 
