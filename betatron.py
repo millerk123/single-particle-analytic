@@ -3,11 +3,11 @@ import sys
 from scipy import optimize
 dt = 0.14
 rqm = -1.0
-a0 = 50.0
+a0 = 9.0
 omega0 = 1.0
 phi0 = np.pi/2
-p10 = 0.0
-t_final = 300.0
+p10 = 1.0
+t_final = 3000.0
 # Available pushers: boris, vay, cary, fullrot, euler, petri
 
 def main():
@@ -33,7 +33,7 @@ def main():
             if len(args)>4:
                 t_final = float(args[4])
 
-    n_p = 51
+    n_p = 1
     x = np.zeros(n_p)
     p = np.zeros((3,n_p))
 
@@ -111,13 +111,13 @@ def haines_initial(a0,ux0,uy0,uz0,t0,dt,z0):
                             1 + np.square(g0*by0) ) - 0.5*g0*(1-bz0)
     return [pz,px]
 
-def e( x, n ):
+def e( x, y, n ):
 
     global a0
 
     ef = np.zeros( (3,x.size) )
 
-    ef[1,:] = a0 * omega0 * np.sin( omega0*( x - n*dt ) + phi0 )
+    ef[1,:] = a0 * omega0 * np.sin( omega0*( x - n*dt ) + phi0 ) - y / 2.0
 
     return ef
 
@@ -393,7 +393,7 @@ def dudt_euler( p_in, ep, bp ):
 
 def adv_dep( x, p_in, n ):
 
-    p = dudt( p_in, e(x[0,:],n), b(x[0,:],n) )
+    p = dudt( p_in, e(x[0,:],x[1,:],n), b(x[0,:],n) )
 
     rgamma = 1.0 / np.sqrt( 1.0 + np.sum( np.square(p), axis=0 ) )
 
