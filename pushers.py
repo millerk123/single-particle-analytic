@@ -27,11 +27,11 @@ def main():
     dudt = pushers[args[1]]
 
     if len(args)>2:
-        if len(args)!=4:
-            print("Must have both a0 and p10 as inputs, no more")
-            return
         a0 = float(args[2])
-        p10 = float(args[3])
+        if len(args)>3:
+            p10 = float(args[3])
+            if len(args)>4:
+                t_final = float(args[4])
 
     n_p = 51
     x = np.zeros(n_p)
@@ -63,7 +63,8 @@ def main():
     
     diag_gamma = np.sqrt( 1 + np.sum( np.square(diag_p), axis=0) )
 
-    np.savez( 'single-part-'+dudt.__name__[5:], x=diag_x, p=diag_p, gamma=diag_gamma,
+    np.savez( 'single-part-{}-a0-{}-p10-{}'.format(dudt.__name__[5:],a0,p10),
+                x=diag_x, p=diag_p, gamma=diag_gamma,
                 dt=dt, n_steps=n_steps, a0=a0, phi0=phi0, p10=p10 )
 
 # Assumes all arrays are of shape [dim,part]
@@ -130,7 +131,7 @@ def b( x, n ):
 
     return bf
 
-def dudt_boris( p_in, ep, bp, n ):
+def dudt_boris( p_in, ep, bp ):
 
     tem = 0.5 * dt / rqm
 
@@ -151,7 +152,7 @@ def dudt_boris( p_in, ep, bp, n ):
 
     return p
 
-def dudt_petri( p_in, ep, bp, n ):
+def dudt_petri( p_in, ep, bp ):
 
     def lorentz_rotate2( sign ):
 
@@ -270,7 +271,7 @@ def dudt_petri( p_in, ep, bp, n ):
 
     return u4_tmp[1:,:]
 
-def dudt_vay( p_in, ep, bp, n ):
+def dudt_vay( p_in, ep, bp ):
 
     tem = 0.5 * dt / rqm
 
@@ -300,7 +301,7 @@ def dudt_vay( p_in, ep, bp, n ):
 
     return p
 
-def dudt_cary( p_in, ep, bp, n ):
+def dudt_cary( p_in, ep, bp ):
 
     tem = 0.5 * dt / rqm
 
@@ -326,7 +327,7 @@ def dudt_cary( p_in, ep, bp, n ):
 
     return p
 
-def dudt_fullrot( p_in, ep, bp, n ):
+def dudt_fullrot( p_in, ep, bp ):
 
     tem = 0.5 * dt / rqm
 
@@ -353,7 +354,7 @@ def dudt_fullrot( p_in, ep, bp, n ):
 
     return p
 
-def dudt_euler( p_in, ep, bp, n ):
+def dudt_euler( p_in, ep, bp ):
 
     tem = 0.5 * dt / rqm
 
@@ -392,7 +393,7 @@ def dudt_euler( p_in, ep, bp, n ):
 
 def adv_dep( x, p_in, n ):
 
-    p = dudt( p_in, e(x[0,:],n), b(x[0,:],n), n )
+    p = dudt( p_in, e(x[0,:],n), b(x[0,:],n) )
 
     rgamma = 1.0 / np.sqrt( 1.0 + np.sum( np.square(p), axis=0 ) )
 
