@@ -3,16 +3,17 @@ import sys
 from scipy import optimize
 dt = 0.14
 rqm = -1.0
-a0 = 9.0
-omega0 = 1.0
+a0 = 1.0
+omega0 = 53.6488
 phi0 = np.pi/2
 p10 = 1.0
 t_final = 3000.0
+v_ph = 1.0007
 # Available pushers: boris, vay, cary, fullrot, euler, petri
 
 def main():
 
-    global dudt, a0, p10
+    global dudt, a0, p10, t_final
 
     pushers = {
         "boris" : dudt_boris,
@@ -33,20 +34,15 @@ def main():
             if len(args)>4:
                 t_final = float(args[4])
 
-    n_p = 1
+    n_p = 51
     x = np.zeros(n_p)
     p = np.zeros((3,n_p))
 
     #----Set up initial conditions for multiple particles----
     x[:] = np.linspace(-np.pi,np.pi,n_p)
 
-    # Get proper initial conditions for the momentum (half time step back)
-    # With this momentum, the true initial velocity in x1/x2 will average to 0
-    for i in np.arange(n_p):
-        ux0=0.0; uy0=0.0; uz0=p10; t0=phi0; z0=x[i];
-        [p10_half,p20_half] = haines_initial(a0,ux0,uy0,uz0,t0,dt,z0)
-        p[0,i] = p10_half
-        p[1,i] = p20_half
+    # Get initial conditions
+    p[0,:] = 10
 
     n_steps = np.ceil(t_final/dt).astype(int)
 
@@ -55,61 +51,21 @@ def main():
     diag_p = np.zeros((3,n_p,n_steps+1))
 
     diag_x[0,:,0] = x
+    diag_x[1,:,0] = 1.5
     diag_p[:,:,0] = p
 
     for n in np.arange(n_steps):
 
         diag_x[:,:,n+1], diag_p[:,:,n+1] = adv_dep( diag_x[:,:,n], diag_p[:,:,n], n )
-    
+
     diag_gamma = np.sqrt( 1 + np.sum( np.square(diag_p), axis=0) )
 
-    np.savez( 'single-part-{}-a0-{}-p10-{}'.format(dudt.__name__[5:],a0,p10),
+    np.savez( 'betatron-{}-a0-{}-p10-{}'.format(dudt.__name__[5:],a0,p10),
                 x=diag_x, p=diag_p, gamma=diag_gamma,
                 dt=dt, n_steps=n_steps, a0=a0, phi0=phi0, p10=p10 )
 
 # Assumes all arrays are of shape [dim,part]
 # Except x, which is shape [part] since we don't need to keep track of other 2 dimensions
-
-def haines_initial(a0,ux0,uy0,uz0,t0,dt,z0):
-    g0 = np.sqrt( 1. + np.square(ux0) + np.square(uy0) + np.square(uz0) )
-    bx0=ux0/g0; by0=uy0/g0; bz0=uz0/g0;
-    phi0 = t0 - z0
-
-    # Solve for the value of s for half time step back
-    def t_haines(s):
-        return (1./(2*g0*(1-bz0))*( 0.5*np.square(a0)*s + np.square(a0)/(4*g0*(1-bz0))*
-                        ( np.sin(2*g0*(1-bz0)*s+2*phi0) - np.sin(2*phi0) ) + 
-                        2*a0*(g0*bx0 - a0*np.cos(phi0))/(g0*(1-bz0))*( np.sin(g0*(1-bz0)*s+phi0) - np.sin(phi0) ) +
-                        np.square(g0*bx0 - a0*np.cos(phi0))*s + s + np.square(g0*by0)*s ) - 0.5*g0*(1-bz0)*s + 
-                        g0*(1-bz0)*s - (-dt/2) )
-
-    # Calculate the initial s value that corresponds to -dt/2
-    # There can be error in this, so we calculate it in a while loop to make sure it's right
-    t = 0.0
-    count = 0
-    max_iter = 10
-    while not np.isclose(t,-dt/2,rtol=1e-4,atol=1e-4) and count < max_iter:
-        # Start second guess at 0, then decrease from there for large a0 values
-        s = optimize.root_scalar(t_haines,x0=-dt/2,x1=-dt/2*count/100).root
-
-        x = a0/(g0*(1-bz0)) * ( np.sin( g0*(1-bz0)*s + phi0 ) - np.sin(phi0) ) - a0*s*np.cos(phi0) + g0*bx0*s
-        z = 1./(2*g0*(1-bz0))*( 0.5*np.square(a0)*s + np.square(a0)/(4*g0*(1-bz0))*
-                            ( np.sin(2*g0*(1-bz0)*s+2*phi0) - np.sin(2*phi0) ) + 
-                            2*a0*(g0*bx0 - a0*np.cos(phi0))/(g0*(1-bz0))*( np.sin(g0*(1-bz0)*s+phi0) - np.sin(phi0) ) +
-                            np.square(g0*bx0 - a0*np.cos(phi0))*s + s + np.square(g0*by0)*s ) - 0.5*g0*(1-bz0)*s
-        t = z + g0*(1-bz0)*s
-        count += 1
-        
-    if count == max_iter:
-        print("Could not calculate the correct t_initial.  Aborting...")
-        print("Desired t_initial = ",-dt/2,", calculated t_initial = ",t)
-        return
-
-    # Get initial momentum a half time step back
-    px = a0*( np.cos(g0*(1-bz0)*s + phi0) - np.cos(phi0) ) + g0*bx0
-    pz = 1./(2*g0*(1-bz0))*( np.square( -a0*(np.cos(g0*(1-bz0)*s + phi0) - np.cos(phi0)) - g0*bx0 ) + 
-                            1 + np.square(g0*by0) ) - 0.5*g0*(1-bz0)
-    return [pz,px]
 
 def e( x, y, n ):
 
@@ -117,7 +73,7 @@ def e( x, y, n ):
 
     ef = np.zeros( (3,x.size) )
 
-    ef[1,:] = a0 * omega0 * np.sin( omega0*( x - n*dt ) + phi0 ) - y / 2.0
+    ef[1,:] = a0 * omega0 * np.sin( omega0*( x/v_ph - n*dt ) + phi0 ) + y / 2.0
 
     return ef
 
@@ -127,7 +83,7 @@ def b( x, n ):
 
     bf = np.zeros( (3,x.size) )
 
-    bf[2,:] = a0 * omega0 * np.sin( omega0*( x - n*dt ) + phi0 )
+    bf[2,:] = a0 * omega0 * np.sin( omega0*( x/v_ph - n*dt ) + phi0 )
 
     return bf
 
